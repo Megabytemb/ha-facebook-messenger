@@ -81,8 +81,10 @@ class FacebookMessengerConfigFlow(
 
     async def async_step_select_page(self, user_input=None):
         """Get Calendar ID from User."""
+        _LOGGER.debug("fn:async_step_select_page")
         if user_input is not None:
             page_index = user_input["page_index"]
+            _LOGGER.debug(f"Facebook Index: {page_index}")
             page = self._data["page_data"][int(page_index)]
 
             self._data["page_id"] = page["id"]
@@ -124,6 +126,7 @@ class FacebookMessengerConfigFlow(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle discovery confirmation."""
+        _LOGGER.debug("fn:async_step_webhook_info")
 
         self.hass.data.setdefault(DOMAIN, {})
         self.hass.data[DOMAIN].setdefault(".well-known", {})
@@ -149,6 +152,8 @@ class FacebookMessengerConfigFlow(
             return self.async_abort(reason="no_external_url")
 
         webhook_url = f"{external_url}{WEBHOOK_URL}"
+
+        _LOGGER.debug(f"setting up Webhook URL: {webhook_url}")
 
         app_token = f"{self.flow_impl.client_id}|{self.flow_impl.client_secret}"
         app_id = self.flow_impl.client_id
