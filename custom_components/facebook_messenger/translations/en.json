@@ -1,0 +1,19 @@
+{
+    "title": "Facebook Messenger",
+    "config": {
+        "step": {
+            "select_page": {
+                "title": "Pick Page",
+                "description": "Select the Facebook Page you want to connect to Home Assistant.",
+                "data": {
+                    "page_index": "Facebook Page"
+                }
+            }
+        },
+        "error": {
+            "auth": "Username/Password is wrong.",
+            "connection": "Unable to connect to the server.",
+            "unknown": "Unknown error occurred."
+        }
+    }
+}

@@ -1,0 +1,15 @@
+{
+  "domain": "facebook_messenger",
+  "name": "Facebook Messenger",
+  "codeowners": [
+    "@Megabytemb"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "application_credentials"
+  ],
+  "documentation": "https://github.com/Megabytemb/ha-facebook-messenger",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/Megabytemb/ha-facebook-messenger/issues",
+  "version": "1.0.0"
+}
