@@ -137,8 +137,10 @@ class FacebookMessengerConfigFlow(
             self.hass.data[DOMAIN][".well-known"]["verify_token"] = verify_token
 
         self._data["verify_token"] = verify_token
+        LOGGER.debug(f"Generated verify_token: {verify_token}")
 
         self.hass.http.register_view(FacebookWebhookView)
+        LOGGER.debug(f"Registered Webhook view")
 
         try:
             external_url = network.get_url(
