@@ -58,10 +58,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     app_info = await coordinator.async_get_app_data()
     try:
-        webhook_url, created_cloudhook = await async_setup_webhook(hass, app_info)
-
-        if created_cloudhook is True:
-            await coordinator.save_cloud_webhook_url(webhook_url)
+        await async_setup_webhook(hass, app_info)
     except ValueError as exc:
         if str(exc) == "Handler is already defined!":
             _LOGGER.debug(
