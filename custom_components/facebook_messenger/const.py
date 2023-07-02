@@ -12,9 +12,15 @@ ATTRIBUTION = "Data provided by Facebook"
 
 
 WEBHOOK_URL = "/api/facebook_messenger/webhook"
+WEBHOOK_ID = "facebook_messenger_webhook"
+
+CONF_CLOUDHOOK_URL = "cloudhook_url"
 
 ATTR_TEXT = "text"
 
 SAVE_DELAY = 10
 STORAGE_KEY = DOMAIN
 STORAGE_VERSION = 1
+
+CONF_WEBOOK_VERIFY_TOKEN = "verify_token"
+CONF_APP_NAME = "app_name"

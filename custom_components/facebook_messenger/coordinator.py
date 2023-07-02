@@ -2,16 +2,24 @@
 from datetime import timedelta
 import logging
 import random
+import secrets
 
 from homeassistant.components import persistent_notification
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import (
     DataUpdateCoordinator,
 )
 
 from .api import Facebook
-from .const import DOMAIN, STORAGE_KEY, STORAGE_VERSION
+from .const import (
+    CONF_APP_NAME,
+    CONF_WEBOOK_VERIFY_TOKEN,
+    DOMAIN,
+    STORAGE_KEY,
+    STORAGE_VERSION,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -41,13 +49,53 @@ class FacebookDataUpdateCoordinator(DataUpdateCoordinator):
             update_interval=timedelta(minutes=5),
         )
         self.fb: Facebook = fb_api
-        self.page_id = self.config_entry.data["page_id"]
-        self._store = Store(
-            hass, STORAGE_VERSION, f"{STORAGE_KEY}_{self.config_entry.entry_id}"
-        )
+        self._store = Store(hass, STORAGE_VERSION, f"{STORAGE_KEY}")
         self.saved_data: dict = None
+        self.page_id = None
+
+        if self.config_entry is not None:
+            self.page_id = self.config_entry.data["page_id"]
 
         self.pending_codes = []
+
+        self._app_name = None
+
+    async def async_set_page_token(self):
+        """Get a new page access token for our page."""
+        if self.page_id is not None:
+            page_token = await self.get_page_token()
+            self.fb.set_page_token(page_token)
+
+    async def async_get_app_data(self):
+        """Get App Data from Storage for fb app."""
+        await self.async_load()
+
+        self.saved_data.setdefault("apps", {})
+        app_data = self.saved_data["apps"].get(self.fb.client_id, {})
+
+        changed = False
+
+        if app_data.get(CONF_WEBHOOK_ID) is None:
+            webhook_id = app_data[CONF_WEBHOOK_ID] = secrets.token_hex(32)
+            _LOGGER.debug("Generated webhook_id: %s", webhook_id)
+            changed = True
+
+        if app_data.get(CONF_WEBOOK_VERIFY_TOKEN) is None:
+            verify_token = app_data[CONF_WEBOOK_VERIFY_TOKEN] = secrets.token_hex(32)
+            _LOGGER.debug("Generated verify_token: %s", verify_token)
+            changed = True
+
+        if self._app_name is None:
+            fb_app_data = await self.fb.app().get_app_info(self.fb.client_id)
+            app_data[CONF_APP_NAME] = self._app_name = app_name = fb_app_data["name"]
+            _LOGGER.debug("Got facebook app name: %s", app_name)
+            changed = True
+
+        if changed is True:
+            self.saved_data["apps"][self.fb.client_id] = app_data
+            await self._async_save()
+
+        return app_data
 
     async def get_page_token(self):
         """Retrieve the access token for the Facebook page associated with the provided page ID."""
@@ -58,7 +106,7 @@ class FacebookDataUpdateCoordinator(DataUpdateCoordinator):
             if page["id"] == self.page_id:
                 return page["access_token"]
 
-        raise ValueError("Page Token unabled to be obtained")
+        raise ValueError("Page Token unable to be obtained.")
 
     async def async_load(self) -> None:
         """Load config."""
@@ -70,14 +118,14 @@ class FacebookDataUpdateCoordinator(DataUpdateCoordinator):
         if self.saved_data is None:
             self.saved_data = {}
 
-    async def _async_update_data(self):
-        """Fetch data from API endpoint."""
-        data = await self.fb.user().get_page(self.page_id)
-        return data
-
     async def _async_save(self) -> None:
         """Save config."""
         await self._store.async_save(self.saved_data)
+
+    async def _async_update_data(self):
+        """Fetch data from API endpoint."""
+        data = await self.fb.page().get_page(self.page_id)
+        return data
 
     async def handle_webhook_entry(self, object: str, entry: dict):
         """Handle a webhook entry by processing the messaging data and performing actions based on the received messages."""
@@ -86,10 +134,10 @@ class FacebookDataUpdateCoordinator(DataUpdateCoordinator):
         for message in entry["messaging"]:
             text_message = message["message"]["text"]
             if text_message in self.pending_codes:
-                asid = message["sender"]["id"]
+                psid = message["sender"]["id"]
                 page_name = self.data.get("name")
 
-                msg = f"The Facebook ASID for code {text_message} on page {page_name} is: {asid}"
+                msg = f"The Facebook PSID for code {text_message} on page {page_name} is: {psid}"
 
                 _LOGGER.info(msg)
 

@@ -15,9 +15,9 @@ from homeassistant.helpers import aiohttp_client, config_entry_oauth2_flow, disc
 from .api import Facebook
 from .const import DOMAIN
 from .coordinator import FacebookDataUpdateCoordinator
-from .http import FacebookWebhookView
+from .webhook import async_setup_webhook, async_unload_webhook
 
-logger = logging.getLogger(__name__)
+_LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.BUTTON,
@@ -27,40 +27,50 @@ PLATFORMS: list[Platform] = [
 async def async_setup(hass: HomeAssistant, config) -> bool:
     """Initialize the webhook component."""
     hass.data.setdefault(DOMAIN, {})
-    hass.data[DOMAIN].setdefault(".well-known", {})
     hass.data[DOMAIN]["platform_config"] = config.get(DOMAIN, {})
 
-    hass.http.register_view(FacebookWebhookView)
     return True
 
 
 # https://developers.home-assistant.io/docs/config_entries_index/#setting-up-an-entry
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up this integration using UI."""
-
-    hass.data[DOMAIN][".well-known"]["verify_token"] = entry.data["verify_token"]
-
     implementation = (
         await config_entry_oauth2_flow.async_get_config_entry_implementation(
             hass, entry
         )
     )
 
-    oauth_session = config_entry_oauth2_flow.OAuth2Session(hass, entry, implementation)
+    token = entry.data["token"]
     client_session = aiohttp_client.async_get_clientsession(hass)
-    page_token = entry.data["page_token"]
 
     facebook = Facebook(
-        oauth_session=oauth_session,
         client_session=client_session,
-        page_token=page_token,
+        oauth_implementation=implementation,
+        token=token,
     )
 
-    coordinator = FacebookDataUpdateCoordinator(hass, facebook)
+    coordinator = hass.data[DOMAIN][entry.entry_id] = FacebookDataUpdateCoordinator(
+        hass, facebook
+    )
+
+    await coordinator.async_set_page_token()
+
+    app_info = await coordinator.async_get_app_data()
+    try:
+        await async_setup_webhook(hass, app_info)
+    except ValueError as exc:
+        if str(exc) == "Handler is already defined!":
+            _LOGGER.debug(
+                "Webhook Handler was already defined. Likely have "
+                "multiple pages using the same Facebook App "
+                "(or we're fresh off a Config setup)."
+            )
+        else:
+            raise exc
 
     await coordinator.async_config_entry_first_refresh()
 
-    hass.data[DOMAIN][entry.entry_id] = coordinator
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(async_reload_entry))
 
@@ -82,6 +92,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Handle removal of an entry."""
+    coordinator = hass.data[DOMAIN][entry.entry_id]
+    app_info = await coordinator.async_get_app_data()
+    async_unload_webhook(hass, app_info)
+
     if unloaded := await hass.config_entries.async_unload_platforms(entry, PLATFORMS):
         hass.data[DOMAIN].pop(entry.entry_id)
     return unloaded

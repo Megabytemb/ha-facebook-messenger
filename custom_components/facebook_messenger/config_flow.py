@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from aiohttp import ClientResponseError
 import voluptuous as vol
 
 from homeassistant.config_entries import (
@@ -11,7 +12,7 @@ from homeassistant.config_entries import (
     ConfigEntry,
 )
 from homeassistant.data_entry_flow import FlowResult
-from homeassistant.helpers import config_entry_oauth2_flow, network
+from homeassistant.helpers import config_entry_oauth2_flow
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     SelectOptionDict,
@@ -19,11 +20,14 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
 )
-from homeassistant.util import uuid as uuid_util
 
-from . import FacebookWebhookView
 from .api import Facebook
-from .const import DOMAIN, WEBHOOK_URL
+from .const import (
+    CONF_WEBOOK_VERIFY_TOKEN,
+    DOMAIN,
+)
+from .coordinator import FacebookDataUpdateCoordinator
+from .webhook import async_setup_webhook
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -56,10 +60,17 @@ class FacebookMessengerConfigFlow(
             return self.async_abort(reason="reauth_successful")
 
         self._data = data
-        self.fb = Facebook(
-            async_get_clientsession(self.hass),
-            user_token=self._data["token"]["access_token"],
+
+        implementation = self.flow_impl
+        client_session = async_get_clientsession(self.hass)
+
+        fb = Facebook(
+            client_session=client_session,
+            oauth_implementation=implementation,
+            token=self._data["token"],
         )
+
+        self.coordinator = FacebookDataUpdateCoordinator(self.hass, fb)
 
         return await self.async_step_select_page()
 
@@ -87,20 +98,16 @@ class FacebookMessengerConfigFlow(
             _LOGGER.debug(f"Facebook Index: {page_index}")
             page = self._data["page_data"][int(page_index)]
 
+            await self.async_set_unique_id(page["id"])
+            self._abort_if_unique_id_configured()
+
             self._data["page_id"] = page["id"]
             self._data["page_name"] = page["name"]
             self._data["page_token"] = page["access_token"]
             return await self.async_step_webhook_info()
 
-        pages = await self.fb.user().list_pages()
+        pages = await self.coordinator.fb.user().list_pages()
         page_data = self._data["page_data"] = pages.get("data", [])
-
-        # if len(page_data) == 1:
-        #     page = page_data[0]
-        #     self._data["page_id"] = page["id"]
-        #     self._data["page_name"] = page["name"]
-        #     self._data["page_token"] = page["access_token"]
-        #     return await self.async_step_webhook_info()
 
         select_options = []
 
@@ -128,53 +135,31 @@ class FacebookMessengerConfigFlow(
         """Handle discovery confirmation."""
         _LOGGER.debug("fn:async_step_webhook_info")
 
-        self.hass.data.setdefault(DOMAIN, {})
-        self.hass.data[DOMAIN].setdefault(".well-known", {})
-        if (
-            verify_token := self.hass.data[DOMAIN][".well-known"].get("verify_token")
-        ) is None:
-            verify_token = uuid_util.random_uuid_hex()
-            self.hass.data[DOMAIN][".well-known"]["verify_token"] = verify_token
-
-        self._data["verify_token"] = verify_token
-        _LOGGER.debug(f"Generated verify_token: {verify_token}")
-
-        self.hass.http.register_view(FacebookWebhookView)
-        _LOGGER.debug(f"Registered Webhook view")
-
-        try:
-            external_url = network.get_url(
-                self.hass,
-                allow_internal=False,
-                allow_ip=False,
-                require_ssl=True,
-                require_standard_port=False,
-            )
-        except network.NoURLAvailableError:
-            return self.async_abort(reason="no_external_url")
-
-        webhook_url = f"{external_url}{WEBHOOK_URL}"
+        app_info = await self.coordinator.async_get_app_data()
+        webhook_url: str = await async_setup_webhook(self.hass, app_info)
+        app_id = self.coordinator.fb.client_id
 
         _LOGGER.debug(f"setting up Webhook URL: {webhook_url}")
+        try:
+            resp = await self.coordinator.fb.app().setup_subscription(
+                app_id, webhook_url, app_info[CONF_WEBOOK_VERIFY_TOKEN]
+            )
+            _LOGGER.info(resp)
+        except ClientResponseError as exc:
+            _LOGGER.critical("Failed to setup Webhook: %s", str(exc))
+            await self.async_abort(reason="webhook_setup_failed")
 
-        app_token = f"{self.flow_impl.client_id}|{self.flow_impl.client_secret}"
-        app_id = self.flow_impl.client_id
+        self.coordinator.fb.set_page_token(self._data["page_token"])
 
-        # set app App level Webhook
-        resp = await self.fb.app(app_token).setup_subscription(
-            app_id, webhook_url, verify_token
-        )
-        _LOGGER.info(resp)
+        try:
+            resp = await self.coordinator.fb.page().setup_page_subscription(
+                self._data["page_id"]
+            )
+            _LOGGER.info(resp)
+        except ClientResponseError as exc:
+            _LOGGER.critical("Failed to subscribe Page to Webhook: %s", str(exc))
+            await self.async_abort(reason="webhook_page_setup_failed")
 
-        page_token = self._data["page_token"]
-
-        resp = await self.fb.page(page_token).setup_page_subscription(
-            self._data["page_id"]
-        )
-        _LOGGER.info(resp)
-
-        await self.async_set_unique_id(self._data["page_id"])
-        self._abort_if_unique_id_configured()
         return self.async_create_entry(
             title=self._data["page_name"],
             data=self._data,
