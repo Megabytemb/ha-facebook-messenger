@@ -15,6 +15,7 @@ from homeassistant.helpers.update_coordinator import (
 from .api import Facebook
 from .const import (
     CONF_APP_NAME,
+    CONF_CLOUDHOOK_URL,
     CONF_WEBOOK_VERIFY_TOKEN,
     DOMAIN,
     STORAGE_KEY,
@@ -65,6 +66,15 @@ class FacebookDataUpdateCoordinator(DataUpdateCoordinator):
         if self.page_id is not None:
             page_token = await self.get_page_token()
             self.fb.set_page_token(page_token)
+
+    async def save_cloud_webhook_url(self, webhook_url: str) -> None:
+        """Save Cloudhook URL on app data."""
+        await self.async_load()
+
+        app_data = self.saved_data["apps"][self.fb.client_id]
+        app_data[CONF_CLOUDHOOK_URL] = webhook_url
+
+        await self._async_save()
 
     async def async_get_app_data(self):
         """Get App Data from Storage for fb app."""

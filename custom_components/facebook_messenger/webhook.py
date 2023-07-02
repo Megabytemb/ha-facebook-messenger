@@ -10,7 +10,7 @@ from homeassistant.const import CONF_WEBHOOK_ID
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 
-from .const import CONF_APP_NAME, CONF_WEBOOK_VERIFY_TOKEN, DOMAIN
+from .const import CONF_APP_NAME, CONF_CLOUDHOOK_URL, CONF_WEBOOK_VERIFY_TOKEN, DOMAIN
 from .coordinator import FacebookDataUpdateCoordinator
 
 _LOGGER = logging.getLogger(__name__)
@@ -33,7 +33,7 @@ async def async_get_webhook_url(hass: HomeAssistant, webhook_id: str):
 
     try:
         webhook_url = await cloud.async_create_cloudhook(hass, webhook_id)
-        return webhook_url
+        return webhook_url, True
     except (cloud.CloudNotConnected, cloud.CloudNotAvailable) as exc:
         _LOGGER.info("Cloud Hooks not available: %s", str(exc))
 
@@ -54,7 +54,7 @@ async def async_get_webhook_url(hass: HomeAssistant, webhook_id: str):
 
     webhook_url = f"{hass_url}{webhook_path}"
 
-    return webhook_url
+    return webhook_url, False
 
 
 def async_unload_webhook(hass: HomeAssistant, app_info: dict):
@@ -74,7 +74,12 @@ async def async_setup_webhook(hass: HomeAssistant, app_info: dict) -> str:
         str: URL of the registered webhook.
     """
 
-    webhook_url = await async_get_webhook_url(hass, app_info[CONF_WEBHOOK_ID])
+    created_cloudhook = False
+
+    if (webhook_url := app_info.get(CONF_CLOUDHOOK_URL)) is None:
+        webhook_url, created_cloudhook = await async_get_webhook_url(
+            hass, app_info[CONF_WEBHOOK_ID]
+        )
 
     webhook_handler = WebhookHandler(verify_token=app_info[CONF_WEBOOK_VERIFY_TOKEN])
 
@@ -88,7 +93,7 @@ async def async_setup_webhook(hass: HomeAssistant, app_info: dict) -> str:
         local_only=False,
     )
 
-    return webhook_url
+    return webhook_url, created_cloudhook
 
 
 class WebhookHandler:

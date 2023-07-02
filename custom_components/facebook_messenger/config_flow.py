@@ -136,8 +136,11 @@ class FacebookMessengerConfigFlow(
         _LOGGER.debug("fn:async_step_webhook_info")
 
         app_info = await self.coordinator.async_get_app_data()
-        webhook_url: str = await async_setup_webhook(self.hass, app_info)
+        webhook_url, created_cloudhook = await async_setup_webhook(self.hass, app_info)
         app_id = self.coordinator.fb.client_id
+
+        if created_cloudhook is True:
+            await self.coordinator.save_cloud_webhook_url(webhook_url)
 
         _LOGGER.debug(f"setting up Webhook URL: {webhook_url}")
         try:
