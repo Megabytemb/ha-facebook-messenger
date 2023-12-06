@@ -95,7 +95,7 @@ class FacebookMessengerConfigFlow(
         _LOGGER.debug("fn:async_step_select_page")
         if user_input is not None:
             page_index = user_input["page_index"]
-            _LOGGER.debug(f"Facebook Index: {page_index}")
+            _LOGGER.debug("Facebook Index: %s", page_index)
             page = self._data["page_data"][int(page_index)]
 
             await self.async_set_unique_id(page["id"])
@@ -139,7 +139,7 @@ class FacebookMessengerConfigFlow(
         webhook_url = await async_setup_webhook(self.hass, app_info)
         app_id = self.coordinator.fb.client_id
 
-        _LOGGER.debug(f"setting up Webhook URL: {webhook_url}")
+        _LOGGER.debug("setting up Webhook URL: %s"), webhook_url
         try:
             resp = await self.coordinator.fb.app().setup_subscription(
                 app_id, webhook_url, app_info[CONF_WEBOOK_VERIFY_TOKEN]
