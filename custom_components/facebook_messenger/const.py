@@ -2,8 +2,7 @@
 
 ################################
 # Do not change! Will be set by release workflow
-INTEGRATION_VERSION = "main"  # git tag will be used
-MIN_REQUIRED_HA_VERSION = "0.0.0"  # set min required version in hacs.json
+INTEGRATION_VERSION = "1.0.0"  # x-release-please-version
 ################################
 
 NAME = "Facebook Messenger"

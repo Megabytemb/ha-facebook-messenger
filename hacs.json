@@ -1,8 +1,4 @@
 {
     "name": "Facebook Messenger",
-    "filename": "facebook_messenger.zip",
-    "hide_default_branch": true,
-    "homeassistant": "2023.6.2",
-    "render_readme": true,
-    "zip_release": true
+    "homeassistant": "2023.6.2"
 }
